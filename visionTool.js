@@ -250,8 +250,9 @@ async function computeShadow(event) {
     return;
   }
 
-  const localItems = await OBR.scene.local.getItems();
-  
+  //const localItems = await OBR.scene.local.getItems();
+  const localItems = await OBR.scene.items.getItems( (item) => item.name === "Fog of War" );
+
   // Load information from the event
   const {
     awaitTimer, 
@@ -413,6 +414,7 @@ async function computeShadow(event) {
   // *2nd step* - compute shadow polygons for each player, merging all polygons
   // created previously (this can probably be merged into the last step)
   const itemsPerPlayer = {};
+
   for (let j = 0; j < polygons.length; j++) {
     const player = playersWithVision[j];
     let cacheResult = playerShadowCache.getValue(player.id);
@@ -483,22 +485,66 @@ async function computeShadow(event) {
       ellipse.delete();
     }
   }
-  
+
+
   const itemsToAdd = [];
-  for (const item of Object.values(itemsPerPlayer)) {
-    itemsToAdd.push({cmds: item.toCmds(), visible: false, zIndex: 3});
+
+  for (const key of Object.keys(itemsPerPlayer)) {
+    const item = itemsPerPlayer[key];
+
+    const encoder = new TextEncoder();
+    const data = encoder.encode(item.toCmds().toString());
+
+    const digest = await crypto.subtle.digest("SHA-1", data).then(hash => {
+      return ([...new Uint8Array(hash)].map(x => x.toString(16).padStart(2, '0')).join(''));
+    });
+
+    const dedup = await OBR.scene.items.getItems(filter_item => { return filter_item.metadata[`${ID}/digest`] === digest });
+
+    if (dedup.length === 0) {
+      console.log("No duplicate, push "+ digest);
+      itemsToAdd.push({cmds: item.toCmds(), visible: false, zIndex: 3, playerId: playersWithVision[key].id, digest: digest});
+    } else {
+      console.log("Deduplicated "+ digest);
+    }
     item.delete();
   }
 
   computeTimer.pause(); awaitTimer.resume();
 
+  // if we're merging all the segments, then remove the previous fog items:
+  //const xx = await OBR.scene.items.getItems((item) => item.name === "Fog of War");
+
   const promisesToExecute = [
-    OBR.scene.local.addItems(itemsToAdd.map(item => {
-      const path = buildPath().commands(item.cmds).locked(true).visible(item.visible).fillColor("#000000").strokeColor("#000000").layer("FOG").name("Fog of War").metadata({[`${ID}/isVisionFog`]: true}).build();
+    OBR.scene.items.addItems(itemsToAdd.map(item => {
+
+      const FOGPLAYERID = item.playerId;
+
+      // merge everything into one path:
+      let persist_cmds = [];
+      localItems.forEach(item => {
+        if ([`${ID}/${FOGPLAYERID}`] in item.metadata) {
+          persist_cmds = item.commands;
+        }
+      });
+
+      //console.log(persist_cmds);
+      //console.log("Adding digest "+ item.digest);
+
+      // path merge mode:
+      //const path = buildPath().commands(item.cmds.concat(persist_cmds)).locked(false).visible(item.visible).fillColor("#000000").strokeColor("#000000").layer("FOG").name("Fog of War").metadata({[`${ID}/isVisionFog`]: true}).metadata({[`${ID}/${FOGPLAYERID}`]: true}).metadata({[`${ID}/digest`]: item.digest}).build();
+
+      // multiple path mode:
+      const path = buildPath().commands(item.cmds).locked(true).visible(item.visible).fillColor("#000000").strokeColor("#000000").layer("FOG").name("Fog of War").metadata({[`${ID}/isVisionFog`]: true}).metadata({[`${ID}/${FOGPLAYERID}`]: true}).metadata({[`${ID}/digest`]: item.digest}).build();
       path.zIndex = item.zIndex;
+
       return path;
-    })),
-    OBR.scene.local.deleteItems(localItems.filter(isVisionFog).map(fogItem => fogItem.id)),
+    }))
+    // these deletes control persistence.
+    // in path merge mode, remove the previous item, because we have replaced it with our new one.
+    //, OBR.scene.items.deleteItems(xx.map((item) => item.id))
+    // in the original, it just wipes out everything in scene.local
+    //OBR.scene.local.deleteItems(localItems.filter(isVisionFog).map(fogItem => fogItem.id)),
   ];
 
   if (!sceneCache.fog.filled)
