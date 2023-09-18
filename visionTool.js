@@ -9,6 +9,8 @@ import { squareDistance, comparePosition, isClose, mod } from "./mathutils";
 import { Timer } from "./debug";
 import { ObjectCache } from "./cache";
 
+let megafog_index = 0;
+
 export function setupContextMenus() {
   // This context menu appears on character tokens and determines whether they
   // to render their FoW or not
@@ -444,11 +446,14 @@ async function computeShadow(event) {
       if (shape.style.closed != false) {
         const shapePath = PathKit.NewPath();
         shapePath.moveTo(shape.points[0].x * shape.scale.x + shape.position.x, shape.points[0].y * shape.scale.y + shape.position.y);
+        //for (let i = shape.points.length-1; i < 1; i--)
         for (let i = 1; i < shape.points.length-1; i++)
           shapePath.lineTo(shape.points[i].x * shape.scale.x + shape.position.x, shape.points[i].y * shape.scale.y + shape.position.y);
         newPath.op(shapePath, PathKit.PathOp.DIFFERENCE);
         shapePath.delete();
       }
+      newPath.simplify();
+      //newPath.simplify();
       pathBuilder.add(newPath, PathKit.PathOp.DIFFERENCE);
       newPath.delete();
     }
@@ -462,6 +467,7 @@ async function computeShadow(event) {
     pathBuilder.delete();
 
     if (path !== undefined) {
+      //path.setFillType(PathKit.FillType.WINDING);
       path.simplify();
       itemsPerPlayer[j] = path;
       let cacheResult = playerShadowCache.getValue(player.id);
@@ -486,8 +492,34 @@ async function computeShadow(event) {
     }
   }
 
+  /*
+  let megafog;
+  const megaget = await OBR.scene.items.getItems(filter_item => { return filter_item.name === "Megafog" });
+
+  if (megaget.length === 0) {
+    const megapathrect = PathKit.NewPath().rect(-1000, -1000, 2000, 2000);
+    let megapath = buildPath().commands(megapathrect.toCmds()).locked(true).visible(true).fillColor("#4f4f4f").strokeColor("#000000").layer("DRAWING").name("Megafog").build();
+    let addmegafog = await OBR.scene.items.addItems([megapath]); 
+    megafog = addmegafog[0];
+  } else {
+    megafog = megaget[0];
+  }
+*/
 
   const itemsToAdd = [];
+
+  const megapathrect = PathKit.NewPath().rect(-10000, -10000, 20000, 20000);
+  /*
+  const megapathrect = PathKit.NewPath();
+
+  megapathrect.moveTo(10000, 10000);
+  megapathrect.lineTo(-10000, 10000);
+  megapathrect.lineTo(-10000, -10000);
+  megapathrect.lineTo(10000, -10000);
+  megapathrect.close();
+*/
+  megapathrect.zIndex = 1;
+  let ic;
 
   for (const key of Object.keys(itemsPerPlayer)) {
     const item = itemsPerPlayer[key];
@@ -502,13 +534,60 @@ async function computeShadow(event) {
     const dedup = await OBR.scene.items.getItems(filter_item => { return filter_item.metadata[`${ID}/digest`] === digest });
 
     if (dedup.length === 0) {
-      console.log("No duplicate, push "+ digest);
+      //console.log("No duplicate, push "+ digest);
       itemsToAdd.push({cmds: item.toCmds(), visible: false, zIndex: 3, playerId: playersWithVision[key].id, digest: digest});
     } else {
-      console.log("Deduplicated "+ digest);
+      //console.log("Deduplicated "+ digest);
     }
+
+    //item.setFillType(PathKit.FillType.EVENODD);
+
+    ic = item.copy();
+    ic.setFillType(PathKit.FillType.EVENODD);
+    ic.op(megapathrect, PathKit.PathOp.REVERSE_DIFFERENCE);
+    //megapathrect.setFillType(PathKit.FillType.EVENODD);
+    //let x = item.copy().simplify();
+    //console.log(item.computeTightBounds());
+    //megapathrect.op(item, PathKit.PathOp.DIFFERENCE);
+    //console.log(megapathrect.toCmds(), item.toCmds());
+    console.log(ic.toSVGString());
+    //x.delete();
     item.delete();
   }
+
+  const old_megafog = await OBR.scene.items.getItems(filter_item => { return filter_item.name === "Megafog"});
+
+  if (old_megafog.length > 0) {
+    await OBR.scene.items.deleteItems(old_megafog.map((item) => item.id));
+  }
+  megafog_index++;
+  const stuffToAdd = [];
+  const megapath = buildPath().commands(ic.toCmds()).locked(true).fillRule("evenodd").visible(true).fillColor("#000000").fillOpacity(0.7).strokeWidth(0).strokeColor("#000000").layer("DRAWING").name("Megafog").build();
+  megapath.zIndex = 1;
+  
+  stuffToAdd.push(megapath);
+
+  //await OBR.scene.items.addItems([megapath]);
+  megapathrect.delete();
+  ic.delete();
+
+ // megafog.commands = megadiff.toCmds();
+
+  //console.log(megafog);
+
+  /*
+   buildPath().commands(item.cmds).locked(true).visible(item.visible).fillColor("#000000").strokeColor("#000000").layer("FOG").name("Fog of War").metadata({[`${ID}/isVisionFog`]: true}).metadata({[`${ID}/${FOGPLAYERID}`]: true}).metadata({[`${ID}/digest`]: item.digest}).build();
+  
+    //totally unoptimised, brute force it for now 
+    const diff = await OBR.scene.items.getItems(filter_item => { return filter_item.metadata[`${ID}/digest`] });
+    Object.keys(diff).forEach(key => {
+        const diffpath = PathKit.FromCmds(diff[key].commands);
+        diffpath.op(item, PathKit.PathOp.DIFFERENCE);
+//        console.log(diff[key]);
+        diff[key].commands = diffpath.toCmds();
+        diffpath.delete();
+    });
+      */
 
   computeTimer.pause(); awaitTimer.resume();
 
@@ -535,11 +614,13 @@ async function computeShadow(event) {
       //const path = buildPath().commands(item.cmds.concat(persist_cmds)).locked(false).visible(item.visible).fillColor("#000000").strokeColor("#000000").layer("FOG").name("Fog of War").metadata({[`${ID}/isVisionFog`]: true}).metadata({[`${ID}/${FOGPLAYERID}`]: true}).metadata({[`${ID}/digest`]: item.digest}).build();
 
       // multiple path mode:
-      const path = buildPath().commands(item.cmds).locked(true).visible(item.visible).fillColor("#000000").strokeColor("#000000").layer("FOG").name("Fog of War").metadata({[`${ID}/isVisionFog`]: true}).metadata({[`${ID}/${FOGPLAYERID}`]: true}).metadata({[`${ID}/digest`]: item.digest}).build();
+      //const path = buildPath().commands(item.cmds).locked(true).visible(item.visible).fillColor("#000000").strokeColor("#000000").layer("FOG").name("Fog of War").metadata({[`${ID}/isVisionFog`]: true}).metadata({[`${ID}/${FOGPLAYERID}`]: true}).metadata({[`${ID}/digest`]: item.digest}).build();
+      const path = buildPath().commands(item.cmds).locked(true).visible(item.visible).fillColor('#000000').strokeColor("#000000").layer("FOG").name("Fog of War").metadata({[`${ID}/isVisionFog`]: true}).metadata({[`${ID}/${FOGPLAYERID}`]: true}).metadata({[`${ID}/digest`]: item.digest}).build();
       path.zIndex = item.zIndex;
 
       return path;
     }))
+    //OBR.scene.items.deleteItems(old_megafog.map((item) => item.id))
     // these deletes control persistence.
     // in path merge mode, remove the previous item, because we have replaced it with our new one.
     //, OBR.scene.items.deleteItems(xx.map((item) => item.id))
@@ -552,6 +633,9 @@ async function computeShadow(event) {
 
   // Update all items
   await Promise.all(promisesToExecute);
+
+  await OBR.scene.items.addItems(stuffToAdd);
+
   
   const [awaitTimerResult, computeTimerResult] = [awaitTimer.stop(), computeTimer.stop()];
   updatePerformanceInformation({
