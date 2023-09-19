@@ -1,9 +1,9 @@
 {
-    "name": "Dynamic Fog Of War",
-    "version": "1.0.0",
+    "name": "Fog Test",
+    "version": "1.0.1",
     "manifest_version": 1,
     "action": {
-        "title": "Dynamic Fog Of War",
+        "title": "Fog Test",
         "icon": "/icon.svg",
         "popover": "/",
         "height": 500,

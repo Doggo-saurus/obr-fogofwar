@@ -18,6 +18,8 @@ app.innerHTML = `
       <p style="overflow: hidden; white-space: nowrap; text-overflow: ellipsis; max-width:16em">Map: <span id="map_name">No map selected</span></p>
       <p><span id="map_size">Please set your map as a background</span></p>
       <hr>
+      <p>Persistent Fog&nbsp;&nbsp;&nbsp;<input type="checkbox" class="persistence_checkbox"></p>
+      <hr>
       <h2 style="margin-bottom: 0;">Vision Radius</h2>
       <p id="no_tokens_message">Enable vision on your character tokens</p>
       <div id="token_list_div" style="display: block;">
@@ -48,6 +50,13 @@ async function setButtonHandler() {
     }
     await OBR.scene.setMetadata({[`${ID}/visionEnabled`]: event.target.checked});
   }, false);
+
+  const persistentCheckbox = document.getElementById("persistence_checkbox");
+
+  visionCheckbox.addEventListener("click", async event => {
+    await OBR.scene.setMetadata({[`${ID}/persistenceEnabled`]: event.target.checked});
+  }, false);
+  
 }
 
 function updateUI(items)
@@ -55,10 +64,14 @@ function updateUI(items)
   const table = document.getElementById("token_list");
   const message = document.getElementById("no_tokens_message");
   const visionCheckbox = document.getElementById("vision_checkbox");
+  const persistenceCheckbox = document.getElementById("vision_checkbox");
   const playersWithVision = items.filter(isPlayerWithVision);
 
   if (sceneCache.metadata)
     visionCheckbox.checked = sceneCache.metadata[`${ID}/visionEnabled`] == true;
+
+  if (sceneCache.metadata)
+    persistenceCheckbox.checked = sceneCache.metadata[`${ID}/persistenceEnabled`] == true;
 
   if (playersWithVision.length > 0)
     message.style.display = "none";
