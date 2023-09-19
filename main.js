@@ -15,10 +15,12 @@ app.innerHTML = `
     </div>
     <hr>
     <div style="text-align: center;">
-      <p style="overflow: hidden; white-space: nowrap; text-overflow: ellipsis; max-width:16em">Map: <span id="map_name">No map selected</span></p>
+      <p>Autodetect Maps&nbsp;&nbsp;&nbsp;<input type="checkbox" id="autodetect_checkbox"></p>
+      <p style="overflow: hidden; white-space: nowrap; text-overflow: ellipsis; max-width:16em">Maps: <span id="map_name">No map selected</span></p>
       <p><span id="map_size">Please set your map as a background</span></p>
       <hr>
-      <p>Persistent Fog&nbsp;&nbsp;&nbsp;<input type="checkbox" class="persistence_checkbox"></p>
+      <p>Persistence&nbsp;&nbsp;&nbsp;<input type="checkbox" id="persistence_checkbox">&nbsp;&nbsp;<input type="button" id="persistence_reset" value="Reset"></p>
+      <p>Fog of War&nbsp;&nbsp;&nbsp;<input type="checkbox" id="fow_checkbox">&nbsp;&nbsp;<input type="text" maxlength=7 size=4 id="fow_color" value="#000000"></p>
       <hr>
       <h2 style="margin-bottom: 0;">Vision Radius</h2>
       <p id="no_tokens_message">Enable vision on your character tokens</p>
@@ -51,12 +53,49 @@ async function setButtonHandler() {
     await OBR.scene.setMetadata({[`${ID}/visionEnabled`]: event.target.checked});
   }, false);
 
-  const persistentCheckbox = document.getElementById("persistence_checkbox");
+  const persistenceCheckbox = document.getElementById("persistence_checkbox");
 
-  visionCheckbox.addEventListener("click", async event => {
+  persistenceCheckbox.addEventListener("click", async event => {
     await OBR.scene.setMetadata({[`${ID}/persistenceEnabled`]: event.target.checked});
   }, false);
-  
+
+  const autodetectCheckbox = document.getElementById("autodetect_checkbox");
+
+  autodetectCheckbox.addEventListener("click", async event => {
+    await OBR.scene.setMetadata({[`${ID}/autodetectEnabled`]: event.target.checked});
+  }, false);
+
+  const fowCheckbox = document.getElementById("fow_checkbox");
+
+  fowCheckbox.addEventListener("click", async event => {
+    await OBR.scene.setMetadata({[`${ID}/fowEnabled`]: event.target.checked});
+  }, false);
+
+  const resetButton = document.getElementById("persistence_reset");
+
+  resetButton.addEventListener("click", async event => {
+    // TODO: move this into visionTool
+    // our fog has sha1 digests, so just nuke that:
+    const fogItems = await OBR.scene.items.getItems(filter_item => { return filter_item.metadata[`${ID}/digest`] });
+    await OBR.scene.items.deleteItems(fogItems.map(item => item.id));
+    onSceneDataChange(true);
+  }, false);
+
+  const fowColor = document.getElementById("fow_color");
+
+  fowColor.addEventListener("input", async event => {
+    let fowColor = "#000000";
+    const fogRegex = /#[a-f0-9]{6}/
+    if (fogRegex.test(event.target.value)) {
+      // Remove existing fog, will be regenerated on update:
+      await OBR.scene.setMetadata({[`${ID}/fowColor`]: event.target.value});
+
+      const fogItems = await OBR.scene.local.getItems(filter_item => { return filter_item.name === "Megafog" });
+      await OBR.scene.local.deleteItems(fogItems.map(fogItem => fogItem.id));
+    }
+
+  }, false);
+
 }
 
 function updateUI(items)
@@ -64,14 +103,19 @@ function updateUI(items)
   const table = document.getElementById("token_list");
   const message = document.getElementById("no_tokens_message");
   const visionCheckbox = document.getElementById("vision_checkbox");
-  const persistenceCheckbox = document.getElementById("vision_checkbox");
+  const persistenceCheckbox = document.getElementById("persistence_checkbox");
+  const autodetectCheckbox = document.getElementById("autodetect_checkbox");
+  const fowCheckbox = document.getElementById("fow_checkbox");
+  const fowColor = document.getElementById("fow_color");
   const playersWithVision = items.filter(isPlayerWithVision);
 
-  if (sceneCache.metadata)
+  if (sceneCache.metadata) {
     visionCheckbox.checked = sceneCache.metadata[`${ID}/visionEnabled`] == true;
-
-  if (sceneCache.metadata)
     persistenceCheckbox.checked = sceneCache.metadata[`${ID}/persistenceEnabled`] == true;
+    autodetectCheckbox.checked = sceneCache.metadata[`${ID}/autodetectEnabled`] == true;
+    fowCheckbox.checked = sceneCache.metadata[`${ID}/fowEnabled`] == true;
+    fowColor.value = sceneCache.metadata[`${ID}/fowColor`];
+  }
 
   if (playersWithVision.length > 0)
     message.style.display = "none";
@@ -132,14 +176,14 @@ function updateUI(items)
       }, false);
       unlimitedCheckbox.addEventListener("click", async event => {
         let value = false;
-        if (event.target.checked)
+        if (event.target.checked) {
           rangeInput.setAttribute("disabled", "disabled");
-        else {
+        } else {
           value = parseInt(rangeInput.value);
           rangeInput.removeAttribute("disabled");
         }
         await OBR.scene.items.updateItems([player], items => {
-          items[0].metadata[`${ID}/visionRange`] = parseInt(value);
+          items[0].metadata[`${ID}/visionRange`] = value;
         });
       }, false);
     }
