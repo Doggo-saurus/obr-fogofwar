@@ -11,7 +11,7 @@ app.parentElement.style.placeItems = "start";
 app.innerHTML = `
   <div>
     <div>
-      <h1 style="display: inline-block; font-size: 2.2em;">Dynamic Fog&nbsp;&nbsp;</h1><input type="checkbox" id="vision_checkbox" class="large">
+      <h1 style="display: inline-block; font-size: 1.5em;">Persistent Dynamic Fog&nbsp;&nbsp;</h1><input type="checkbox" id="vision_checkbox" class="large">
     </div>
     <hr>
     <div style="text-align: center;">

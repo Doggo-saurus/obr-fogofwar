@@ -258,15 +258,49 @@ async function computeShadow(event) {
     computeTimer, 
     allItems, 
     metadata, 
-    size, 
-    offset,
-    scale,
     visionShapes, 
     playersWithVision, 
     invalidateCache, 
     visionRange,
   } = event.detail;
-  const [width, height] = size;
+
+  let size = event.detail.size, offset = event.detail.offset, scale = event.detail.scale;
+  let [width, height] = size;
+
+  //let width, height, size, scale, offset;
+  const autodetectEnabled = sceneCache.metadata[`${ID}/autodetectEnabled`] === true;
+
+  if (autodetectEnabled) {
+    const maps = await OBR.scene.items.getItems((item) => item.layer === "MAP");
+    
+    // TODO: what a mess
+    let mapbox = [];
+    for (let map of maps) {
+      let dpiRatio = sceneCache.gridDpi / map.grid.dpi;
+      if (!mapbox.length) {
+        mapbox[0] = map.position.x;
+        mapbox[1] = map.position.y;
+        mapbox[2] = (map.position.x + (dpiRatio * map.image.width)) * map.scale.x;
+        mapbox[3] = (map.position.y +  (dpiRatio *map.image.height)) * map.scale.y;
+      } else {
+        if (map.position.x < mapbox[0]) mapbox[0] = map.position.x;
+        if (map.position.y < mapbox[1]) mapbox[1] = map.position.y;
+        if ((map.position.x +  (dpiRatio * map.image.width)) * map.scale.x > mapbox[2]) mapbox[2] = (map.position.x +  (dpiRatio * map.image.width)) * map.scale.x;
+        if ((map.position.y +  (dpiRatio *map.image.height)) * map.scale.y > mapbox[3]) mapbox[3] = (map.position.y +  (dpiRatio * map.image.height)) * map.scale.y;
+      }
+    }
+
+    offset = [mapbox[0], mapbox[1]];
+    size = [mapbox[2] - mapbox[0], mapbox[3] - mapbox[1]];
+    scale = [1, 1];
+    [width, height] = size;
+
+    /*
+    // debug, draw a box around the whole thing
+    const item = buildShape().position({x: offset[0], y: offset[1]}).width(width).height(height).shapeType("RECTANGLE").strokeWidth(10).build();
+    await OBR.scene.items.addItems([item]);
+    */
+  }
 
   let cacheHits = 0, cacheMisses = 0;
   if (invalidateCache)  // Something significant changed => invalidate cache

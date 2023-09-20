@@ -1,9 +1,9 @@
 {
-    "name": "Fog Test",
+    "name": "Persistent Dynamic Fog",
     "version": "1.0.1",
     "manifest_version": 1,
     "action": {
-        "title": "Fog Test",
+        "title": "Persistent Dynamic Fog",
         "icon": "/icon.svg",
         "popover": "/",
         "height": 500,
