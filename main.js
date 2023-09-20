@@ -165,13 +165,15 @@ function updateUI(items)
       const rangeInput = newTr.getElementsByClassName("token-vision-range")[0];
       const unlimitedCheckbox = newTr.getElementsByClassName("unlimited-vision")[0];
       rangeInput.addEventListener("change", async event => {
-        const value = parseInt(event.target.value);
+        let value = parseInt(event.target.value);
         if (value < 0)
           event.target.value = 0;
         if (value > 999)
           event.target.value = 999;
+
+        const updateValue = event.target.value;
         await OBR.scene.items.updateItems([player], items => {
-          items[0].metadata[`${ID}/visionRange`] = parseInt(value);
+          items[0].metadata[`${ID}/visionRange`] = updateValue;
         });
       }, false);
       unlimitedCheckbox.addEventListener("click", async event => {
@@ -182,8 +184,10 @@ function updateUI(items)
           value = parseInt(rangeInput.value);
           rangeInput.removeAttribute("disabled");
         }
+
+        const updateValue = value;
         await OBR.scene.items.updateItems([player], items => {
-          items[0].metadata[`${ID}/visionRange`] = value;
+          items[0].metadata[`${ID}/visionRange`] = updateValue;
         });
       }, false);
     }
