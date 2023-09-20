@@ -1,4 +1,4 @@
-import OBR, { buildPath } from "@owlbear-rodeo/sdk";
+import OBR, { buildPath, buildLine, buildShape } from "@owlbear-rodeo/sdk";
 import PathKitInit from "pathkit-wasm/bin/pathkit";
 import wasm from "pathkit-wasm/bin/pathkit.wasm?url";
 import { ID, sceneCache } from "./globals";
@@ -452,22 +452,21 @@ async function computeShadow(event) {
         newPath.op(shapePath, PathKit.PathOp.DIFFERENCE);
         shapePath.delete();
       }
-      newPath.simplify();
       //newPath.simplify();
       pathBuilder.add(newPath, PathKit.PathOp.DIFFERENCE);
       newPath.delete();
     }
     const path = pathBuilder.resolve();
 
-    if (!path) {
+    if (!path || path.toCmds().length == 0) {
       console.error("Couldn't compute fog");
+      busy = false;
       return;
     }
 
     pathBuilder.delete();
 
     if (path !== undefined) {
-      //path.setFillType(PathKit.FillType.WINDING);
       path.simplify();
       itemsPerPlayer[j] = path;
       let cacheResult = playerShadowCache.getValue(player.id);
@@ -493,16 +492,18 @@ async function computeShadow(event) {
   }
 
   const itemsToAdd = [];
-
-
   const persistenceEnabled = sceneCache.metadata[`${ID}/persistenceEnabled`] === true;
   const fowEnabled = sceneCache.metadata[`${ID}/fowEnabled`] === true;
   let megapathrect;
   const dedup_digest = {};
 
   if (fowEnabled) {
+    const backgroundImage = sceneCache.items.filter(isBackgroundImage)?.[0];
+    const offset = [backgroundImage.position.x, backgroundImage.position.y];
+    const dpiRatio = sceneCache.gridDpi / backgroundImage.grid.dpi;
+    const size = [backgroundImage.image.width * dpiRatio, backgroundImage.image.height * dpiRatio];
     // Create a rect (around our fog area, needs autodetection or something), which we then carve out based on the path showing the currently visible area
-    megapathrect = PathKit.NewPath().rect(-10000, -10000, 20000, 20000);
+    megapathrect = PathKit.NewPath().rect(backgroundImage.position.x, backgroundImage.position.y, size[0], size[1]);
   }
 
   for (const key of Object.keys(itemsPerPlayer)) {
@@ -522,7 +523,6 @@ async function computeShadow(event) {
     } else {
       // these duplicates are still visible, so dont delete them if we have persistence turned off.
       dedup_digest[digest] = true;
-      //console.log("Deduplicated "+ digest);
     }
 
     if (fowEnabled) {
