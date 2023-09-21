@@ -63,6 +63,7 @@ async function setButtonHandler() {
   const autodetectCheckbox = document.getElementById("autodetect_checkbox");
   autodetectCheckbox.addEventListener("click", async event => {
     await OBR.scene.setMetadata({[`${ID}/autodetectEnabled`]: event.target.checked});
+    document.querySelector('#map_select').style.display = event.target.checked ? 'none' : '';
   }, false);
 
   const fowCheckbox = document.getElementById("fow_checkbox");
