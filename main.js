@@ -16,8 +16,10 @@ app.innerHTML = `
     <hr>
     <div style="text-align: center;">
       <p>Autodetect Maps&nbsp;&nbsp;&nbsp;<input type="checkbox" id="autodetect_checkbox"></p>
+      <div id="map_select">
       <p style="overflow: hidden; white-space: nowrap; text-overflow: ellipsis; max-width:16em">Maps: <span id="map_name">No map selected</span></p>
       <p><span id="map_size">Please set your map as a background</span></p>
+      </div>
       <hr>
       <p>Persistence&nbsp;&nbsp;&nbsp;<input type="checkbox" id="persistence_checkbox">&nbsp;&nbsp;<input type="button" id="persistence_reset" value="Reset"></p>
       <p>Fog of War&nbsp;&nbsp;&nbsp;<input type="checkbox" id="fow_checkbox">&nbsp;&nbsp;<input type="text" maxlength=7 size=4 id="fow_color" value="#000000"></p>
@@ -54,25 +56,21 @@ async function setButtonHandler() {
   }, false);
 
   const persistenceCheckbox = document.getElementById("persistence_checkbox");
-
   persistenceCheckbox.addEventListener("click", async event => {
     await OBR.scene.setMetadata({[`${ID}/persistenceEnabled`]: event.target.checked});
   }, false);
 
   const autodetectCheckbox = document.getElementById("autodetect_checkbox");
-
   autodetectCheckbox.addEventListener("click", async event => {
     await OBR.scene.setMetadata({[`${ID}/autodetectEnabled`]: event.target.checked});
   }, false);
 
   const fowCheckbox = document.getElementById("fow_checkbox");
-
   fowCheckbox.addEventListener("click", async event => {
     await OBR.scene.setMetadata({[`${ID}/fowEnabled`]: event.target.checked});
   }, false);
 
   const resetButton = document.getElementById("persistence_reset");
-
   resetButton.addEventListener("click", async event => {
     // TODO: move this into visionTool
     // our fog has sha1 digests, so just nuke that:
@@ -111,10 +109,17 @@ function updateUI(items)
 
   if (sceneCache.metadata) {
     visionCheckbox.checked = sceneCache.metadata[`${ID}/visionEnabled`] == true;
+    autodetectCheckbox.checked = sceneCache.metadata[`${ID}/autodetectEnabled`] == true;
     persistenceCheckbox.checked = sceneCache.metadata[`${ID}/persistenceEnabled`] == true;
     autodetectCheckbox.checked = sceneCache.metadata[`${ID}/autodetectEnabled`] == true;
     fowCheckbox.checked = sceneCache.metadata[`${ID}/fowEnabled`] == true;
-    fowColor.value = sceneCache.metadata[`${ID}/fowColor`];
+    fowColor.value = sceneCache.metadata[`${ID}/fowColor`] ? sceneCache.metadata[`${ID}/fowColor`] : '#000000';
+  }
+
+  if (autodetectCheckbox.checked) {
+    document.querySelector('#map_select').style.display = 'none';
+  } else {
+    document.querySelector('#map_select').style.display = '';
   }
 
   if (playersWithVision.length > 0)
@@ -143,10 +148,10 @@ function updateUI(items)
         name.innerText = player.name;
       if (rangeInput) {
         if (!unlimitedCheckbox.checked)
-          rangeInput.value = player.metadata[`${ID}/visionRange`] ? player.metadata[`${ID}/visionRange`] : 60;
+          rangeInput.value = player.metadata[`${ID}/visionRange`] ? player.metadata[`${ID}/visionRange`] : 30;
       }
       if (unlimitedCheckbox) {
-        unlimitedCheckbox.checked = !player.metadata[`${ID}/visionRange`];
+        unlimitedCheckbox.checked = player.metadata[`${ID}/visionRange`] === false;
       }
       if (unlimitedCheckbox.checked)
         rangeInput.setAttribute("disabled", "disabled");
@@ -160,7 +165,7 @@ function updateUI(items)
       newTr.className = "token-table-entry";
       newTr.innerHTML = `<td class="token-name">${player.name}</td><td><input class="token-vision-range" type="number" value="60"><span class="unit">ft</span></td><td>&nbsp;&nbsp;&infin;&nbsp<input type="checkbox" class="unlimited-vision"></td>`;
       table.appendChild(newTr);
-      
+
       // Register event listeners
       const rangeInput = newTr.getElementsByClassName("token-vision-range")[0];
       const unlimitedCheckbox = newTr.getElementsByClassName("unlimited-vision")[0];

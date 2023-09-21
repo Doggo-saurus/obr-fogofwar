@@ -267,26 +267,27 @@ async function computeShadow(event) {
   let size = event.detail.size, offset = event.detail.offset, scale = event.detail.scale;
   let [width, height] = size;
 
-  //let width, height, size, scale, offset;
   const autodetectEnabled = sceneCache.metadata[`${ID}/autodetectEnabled`] === true;
-
   if (autodetectEnabled) {
+    // draw a big box around all the maps
     const maps = await OBR.scene.items.getItems((item) => item.layer === "MAP");
     
-    // TODO: what a mess
     let mapbox = [];
     for (let map of maps) {
       let dpiRatio = sceneCache.gridDpi / map.grid.dpi;
+      let left = map.position.x, top = map.position.y;
+      let right = (map.position.x + (dpiRatio * map.image.width)) * map.scale.x, bottom = (map.position.y +  (dpiRatio *map.image.height)) * map.scale.y;
+
       if (!mapbox.length) {
-        mapbox[0] = map.position.x;
-        mapbox[1] = map.position.y;
-        mapbox[2] = (map.position.x + (dpiRatio * map.image.width)) * map.scale.x;
-        mapbox[3] = (map.position.y +  (dpiRatio *map.image.height)) * map.scale.y;
+        mapbox[0] = left;
+        mapbox[1] = top;
+        mapbox[2] = right;
+        mapbox[3] = bottom;
       } else {
-        if (map.position.x < mapbox[0]) mapbox[0] = map.position.x;
-        if (map.position.y < mapbox[1]) mapbox[1] = map.position.y;
-        if ((map.position.x +  (dpiRatio * map.image.width)) * map.scale.x > mapbox[2]) mapbox[2] = (map.position.x +  (dpiRatio * map.image.width)) * map.scale.x;
-        if ((map.position.y +  (dpiRatio *map.image.height)) * map.scale.y > mapbox[3]) mapbox[3] = (map.position.y +  (dpiRatio * map.image.height)) * map.scale.y;
+        if (left < mapbox[0]) mapbox[0] = left;
+        if (top < mapbox[1]) mapbox[1] = top;
+        if (right > mapbox[2]) mapbox[2] = right;
+        if (bottom > mapbox[3]) mapbox[3] = bottom;
       }
     }
 
@@ -294,12 +295,6 @@ async function computeShadow(event) {
     size = [mapbox[2] - mapbox[0], mapbox[3] - mapbox[1]];
     scale = [1, 1];
     [width, height] = size;
-
-    /*
-    // debug, draw a box around the whole thing
-    const item = buildShape().position({x: offset[0], y: offset[1]}).width(width).height(height).shapeType("RECTANGLE").strokeWidth(10).build();
-    await OBR.scene.items.addItems([item]);
-    */
   }
 
   let cacheHits = 0, cacheMisses = 0;
@@ -532,17 +527,14 @@ async function computeShadow(event) {
   const dedup_digest = {};
 
   if (fowEnabled) {
-    const backgroundImage = sceneCache.items.filter(isBackgroundImage)?.[0];
-    const offset = [backgroundImage.position.x, backgroundImage.position.y];
-    const dpiRatio = sceneCache.gridDpi / backgroundImage.grid.dpi;
-    const size = [backgroundImage.image.width * dpiRatio, backgroundImage.image.height * dpiRatio];
     // Create a rect (around our fog area, needs autodetection or something), which we then carve out based on the path showing the currently visible area
-    megapathrect = PathKit.NewPath().rect(backgroundImage.position.x, backgroundImage.position.y, size[0], size[1]);
+    megapathrect = PathKit.NewPath().rect(offset[0], offset[0], size[0], size[1]);
   }
 
   for (const key of Object.keys(itemsPerPlayer)) {
     const item = itemsPerPlayer[key];
 
+    // TODO: how slow is this? is there a more efficient way?
     const encoder = new TextEncoder();
     const data = encoder.encode(item.toCmds().toString());
 
@@ -567,13 +559,16 @@ async function computeShadow(event) {
 
   const old_megafog = await OBR.scene.local.getItems();
 
+  computeTimer.pause(); awaitTimer.resume();
+
   if (fowEnabled) {
     const fowColor = sceneCache.metadata[`${ID}/fowColor`] ? sceneCache.metadata[`${ID}/fowColor`] : "#000000";
     const megapath = buildPath().commands(megapathrect.toCmds()).locked(true).fillRule("evenodd").visible(true).fillColor(fowColor).fillOpacity(0.5).strokeWidth(0).strokeColor("#000000").layer("DRAWING").name("Megafog").build();
     megapath.zIndex = 0;
     
     if (old_megafog.length > 0) {
-      // If the old item exists in the scene, reuse it, otherwise you get flickering. This can use fastUpdate since we only change the path.
+      // If the old item exists in the scene, reuse it, otherwise you get flickering. 
+      // Warning: This can use fastUpdate since we only change the path, though it seemed to break without it too.
       OBR.scene.local.updateItems(filter_item => { return filter_item.name === "Megafog" }, items => {
         for (const item of items) {
           item.commands = megapath.commands;
@@ -588,8 +583,6 @@ async function computeShadow(event) {
     const fogItems = await OBR.scene.local.getItems(filter_item => { return filter_item.name === "Megafog" });
     await OBR.scene.local.deleteItems(fogItems.map(fogItem => fogItem.id));
   }
-
-  computeTimer.pause(); awaitTimer.resume();
 
   // Before we start adding and removing, get a list of fog items, excluding any that we detected as duplicates in the scene:
   const oldFog = await OBR.scene.items.getItems( (item) => item.name === "Fog of War" && dedup_digest[item.metadata[`${ID}/digest`]] === undefined );
