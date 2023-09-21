@@ -528,7 +528,7 @@ async function computeShadow(event) {
 
   if (fowEnabled) {
     // Create a rect (around our fog area, needs autodetection or something), which we then carve out based on the path showing the currently visible area
-    megapathrect = PathKit.NewPath().rect(offset[0], offset[0], size[0], size[1]);
+    megapathrect = PathKit.NewPath().rect(offset[0], offset[1], size[0], size[1]);
   }
 
   for (const key of Object.keys(itemsPerPlayer)) {
