@@ -40,6 +40,9 @@ export function setupContextMenus() {
           }
           else if (item.layer == "CHARACTER"){
             item.metadata[`${ID}/hasVision`] = true;
+            if (item.metadata[`${ID}/visionRange`] === undefined) {
+              item.metadata[`${ID}/visionRange`] = 30;
+            }
           }
         }
       });
