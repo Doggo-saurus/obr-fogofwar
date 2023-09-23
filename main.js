@@ -1,7 +1,7 @@
 import "./style.css";
 import OBR from "@owlbear-rodeo/sdk";
 import { ID, sceneCache } from './globals';
-import { isBackgroundImage, isPlayerWithVision, isVisionFog }  from './itemFilters';
+import { isBackgroundImage, isPlayerWithVision, isVisionFog, isTrailingFog }  from './itemFilters';
 import { setupContextMenus, createActions, createMode, createTool, onSceneDataChange } from './visionTool';
 
 // Create the extension page
@@ -73,11 +73,9 @@ async function setButtonHandler() {
 
   const resetButton = document.getElementById("persistence_reset");
   resetButton.addEventListener("click", async event => {
-    // TODO: move this into visionTool
-    // our fog has sha1 digests, so just nuke that:
-    const fogItems = await OBR.scene.items.getItems(filter_item => { return filter_item.metadata[`${ID}/digest`] });
-    await OBR.scene.items.deleteItems(fogItems.map(item => item.id));
-    onSceneDataChange(true);
+    OBR.scene.setMetadata({[`${ID}/forceReset`]: true });
+    OBR.scene.setMetadata({[`${ID}/forceReset`]: undefined });
+
   }, false);
 
   const fowColor = document.getElementById("fow_color");
@@ -89,7 +87,7 @@ async function setButtonHandler() {
       // Remove existing fog, will be regenerated on update:
       await OBR.scene.setMetadata({[`${ID}/fowColor`]: event.target.value});
 
-      const fogItems = await OBR.scene.local.getItems(filter_item => { return filter_item.name === "Megafog" });
+      const fogItems = await OBR.scene.local.getItems(isTrailingFog);
       await OBR.scene.local.deleteItems(fogItems.map(fogItem => fogItem.id));
     }
 
@@ -156,7 +154,7 @@ function updateUI(items)
       const newTr = document.createElement("tr");
       newTr.id = `tr-${player.id}`;
       newTr.className = "token-table-entry";
-      newTr.innerHTML = `<td class="token-name">${player.name}</td><td><input class="token-vision-range" type="number" value="60"><span class="unit">ft</span></td><td>&nbsp;&nbsp;&infin;&nbsp<input type="checkbox" class="unlimited-vision"></td>`;
+      newTr.innerHTML = `<td class="token-name">${player.name}</td><td><input class="token-vision-range" type="number" value="30"><span class="unit">ft</span></td><td>&nbsp;&nbsp;&infin;&nbsp<input type="checkbox" class="unlimited-vision"></td>`;
       table.appendChild(newTr);
 
       // Register event listeners
@@ -203,6 +201,7 @@ async function initScene(playerOrGM)
     OBR.scene.fog.getFilled(),
     OBR.scene.fog.getColor()
   ]);
+  
   OBR.scene.items.deleteItems(sceneCache.items.filter(isVisionFog));
 
   sceneCache.gridScale = sceneCache.gridScale.parsed.multiplier;
@@ -240,16 +239,54 @@ OBR.onReady(() => {
       createActions();
     }
 
+    OBR.scene.onMetadataChange(async function(metadata) {
+      // resets need to propagate to the other players, so handle it via scene metadata change. is there a better way to do this?
+      if (metadata[`${ID}/forceReset`] === true) {
+        const fogItems = await OBR.scene.local.getItems((item) => { return (isVisionFog(item) || isTrailingFog(item)) });
+        OBR.scene.local.deleteItems(fogItems.map((item) => { return item.id; }));
+
+        // Remove items from previous extension versions too
+        const staleItems = await OBR.scene.items.getItems((item) => { return (isVisionFog(item) || isTrailingFog(item)) });
+        OBR.scene.items.deleteItems(staleItems.map((item) => { return item.id; }));
+
+        onSceneDataChange(true);
+      }
+    });
+
     OBR.scene.fog.onChange(fog => {
       sceneCache.fog = fog;
     });
 
     OBR.scene.items.onChange(items => {
-      sceneCache.items = items;
+      // why? from smoke:
+      const iItems = items;
+      sceneCache.items = iItems;
       if (sceneCache.ready) {
-        if (value == "GM") updateUI(items);
+        if (value == "GM") updateUI(iItems);
         onSceneDataChange();
       }
+    });
+
+    sceneCache.userId = await OBR.player.getId();
+    sceneCache.players = await OBR.party.getPlayers();
+
+    OBR.player.onChange(async (players) => {
+
+    });
+
+    OBR.party.onChange(async (players) =>
+    {
+      //sceneCache.players = players;
+      //console.log(players);
+      /*
+        if (role === "PLAYER")
+        {
+            await RunSpectre(players);
+        }
+        else
+        {
+            UpdateSpectreTargets();
+        }*/
     });
 
     OBR.scene.grid.onChange(grid => {

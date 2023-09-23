@@ -2,7 +2,7 @@ import OBR, { buildPath, buildLine, buildShape } from "@owlbear-rodeo/sdk";
 import PathKitInit from "pathkit-wasm/bin/pathkit";
 import wasm from "pathkit-wasm/bin/pathkit.wasm?url";
 import { ID, sceneCache } from "./globals";
-import { isBackgroundImage, isVisionFog, isActiveVisionLine, isPlayerWithVision } from "./itemFilters";
+import { isBackgroundImage, isVisionFog, isActiveVisionLine, isPlayerWithVision, isTokenWithVisionIOwn, isTrailingFog } from "./itemFilters";
 import { polygonMode } from "./visionPolygonMode";
 import { lineMode } from "./visionLineMode";
 import { squareDistance, comparePosition, isClose, mod } from "./mathutils";
@@ -278,8 +278,8 @@ async function computeShadow(event) {
     let mapbox = [];
     for (let map of maps) {
       let dpiRatio = sceneCache.gridDpi / map.grid.dpi;
-      let left = map.position.x, top = map.position.y;
-      let right = (map.position.x + (dpiRatio * map.image.width)) * map.scale.x, bottom = (map.position.y +  (dpiRatio *map.image.height)) * map.scale.y;
+      let left = map.position.x - (dpiRatio * map.grid.offset.x), top = map.position.y - (dpiRatio * map.grid.offset.y);
+      let right = (left + (dpiRatio * map.image.width)) * map.scale.x, bottom = (top +  (dpiRatio *map.image.height)) * map.scale.y;
 
       if (!mapbox.length) {
         mapbox[0] = left;
@@ -309,7 +309,7 @@ async function computeShadow(event) {
   const shouldComputeVision = metadata[`${ID}/visionEnabled`] === true;
   if (!shouldComputeVision || playersWithVision.length == 0) {
     // Clear fog
-    const fogItems = await OBR.scene.items.getItems( (item) => item.name === "Fog of War" );
+    const fogItems = await OBR.scene.items.getItems( (item) => isVisionFog(item) || isTrailingFog(item));
     await OBR.scene.local.deleteItems(fogItems.map(fogItem => fogItem.id));
 
     //await OBR.scene.local.deleteItems(localItems.filter(isVisionFog).map(fogItem => fogItem.id));
@@ -333,8 +333,16 @@ async function computeShadow(event) {
   // `polygons` is a an array of arrays. Each element in the main array is
   // another array containing the individual shadows cast by a vision line
   // from the point of view of one player.
+
   const polygons = [];
+  const gmIds = sceneCache.players.filter(x => x.role == "GM");
   for (const player of playersWithVision) {
+
+    // from smoke:
+    const myToken = (sceneCache.userId === player.createdUserId);
+    const gmToken = gmIds.some(x => x.id == player.createdUserId);
+    if ((!myToken && sceneCache.role !== "GM") && !gmToken) continue;
+
     const cacheResult = playerShadowCache.getValue(player.id);
     polygons.push([]);
     if (cacheResult !== undefined && comparePosition(cacheResult.player.position, player.position)) {
@@ -515,7 +523,13 @@ async function computeShadow(event) {
   for (let i = 0; i < playersWithVision.length; i++) {
     const player = playersWithVision[i];
     const visionRangeMeta = player.metadata[`${ID}/visionRange`];
-    if (visionRangeMeta) {
+
+    const myToken = (sceneCache.userId === playersWithVision[i].createdUserId);
+    const gmToken = gmIds.some(x => x.id == playersWithVision[i].createdUserId);
+
+if (visionRangeMeta) {
+if ((!myToken && sceneCache.role !== "GM") && !gmToken) continue;
+
       const visionRange = sceneCache.gridDpi * (visionRangeMeta / sceneCache.gridScale + .5);
       const ellipse = PathKit.NewPath().ellipse(player.position.x, player.position.y, visionRange, visionRange, 0, 0, 2*Math.PI);
       itemsPerPlayer[i].op(ellipse, PathKit.PathOp.INTERSECT);
@@ -526,12 +540,12 @@ async function computeShadow(event) {
   const itemsToAdd = [];
   const persistenceEnabled = sceneCache.metadata[`${ID}/persistenceEnabled`] === true;
   const fowEnabled = sceneCache.metadata[`${ID}/fowEnabled`] === true;
-  let megapathrect;
+  const trailingFogRect = PathKit.NewPath();
   const dedup_digest = {};
 
   if (fowEnabled) {
     // Create a rect (around our fog area, needs autodetection or something), which we then carve out based on the path showing the currently visible area
-    megapathrect = PathKit.NewPath().rect(offset[0], offset[1], size[0], size[1]);
+    trailingFogRect.rect(offset[0], offset[1], size[0], size[1]);
   }
 
   for (const key of Object.keys(itemsPerPlayer)) {
@@ -545,57 +559,74 @@ async function computeShadow(event) {
       return ([...new Uint8Array(hash)].map(x => x.toString(16).padStart(2, '0')).join(''));
     });
 
-    const dedup = await OBR.scene.items.getItems(filter_item => { return filter_item.metadata[`${ID}/digest`] === digest });
+    const dedup = await OBR.scene.local.getItems(filter_item => { return isVisionFog(filter_item) && filter_item.metadata[`${ID}/digest`] === digest });
 
     if (dedup.length === 0) {
       itemsToAdd.push({cmds: item.toCmds(), visible: false, zIndex: 3, playerId: playersWithVision[key].id, digest: digest});
+      const debugp = buildPath().commands(item.toCmds()).visible(item.visible).fillColor('#FF0000').strokeColor("#00FF00").layer("DRAWING").name("Fog of War").metadata({[`${ID}/isVisionFog`]: true}).build();
+      //OBR.scene.local.addItems([debugp]);
     } else {
       // these duplicates are still visible, so dont delete them if we have persistence turned off.
       dedup_digest[digest] = true;
     }
 
     if (fowEnabled) {
-      megapathrect.op(item, PathKit.PathOp.DIFFERENCE);
+      const debugp = buildPath().commands(item.toCmds()).visible(item.visible).fillColor('#550000').strokeColor("#00FF00").layer("DRAWING").name("Fog of War").metadata({[`${ID}/isVisionFog`]: true}).build();
+      //OBR.scene.local.addItems([debugp]);
+
+      trailingFogRect.op(item, PathKit.PathOp.DIFFERENCE);
     }
     item.delete();
   }
 
-  const old_megafog = await OBR.scene.local.getItems();
+  const oldTrailingFog = await OBR.scene.local.getItems(isTrailingFog);
 
   computeTimer.pause(); awaitTimer.resume();
 
   if (fowEnabled) {
     const fowColor = sceneCache.metadata[`${ID}/fowColor`] ? sceneCache.metadata[`${ID}/fowColor`] : "#000000";
-    const megapath = buildPath().commands(megapathrect.toCmds()).locked(true).fillRule("evenodd").visible(true).fillColor(fowColor).fillOpacity(0.5).strokeWidth(0).strokeColor("#000000").layer("DRAWING").name("Megafog").build();
-    megapath.zIndex = 0;
+    const trailingFog = buildPath()
+      .commands(trailingFogRect.toCmds())
+      .locked(true)
+      .fillRule("evenodd")
+      .visible(true)
+      .fillColor(fowColor)
+      .fillOpacity(0.5)
+      .strokeWidth(0)
+      .strokeColor("#000000")
+      .layer("DRAWING")
+      .metadata({[`${ID}/isTrailingFog`]: true})
+      .name("Trailing Fog")
+      .build();
+
+    // TODO: does this work?
+    trailingFog.disableHit = true;
+    trailingFog.zIndex = 0;
     
-    if (old_megafog.length > 0) {
+    if (oldTrailingFog.length > 0) {
       // If the old item exists in the scene, reuse it, otherwise you get flickering. 
       // Warning: This can use fastUpdate since we only change the path, though it seemed to break without it too.
-      OBR.scene.local.updateItems(filter_item => { return filter_item.name === "Megafog" }, items => {
+      OBR.scene.local.updateItems(isTrailingFog, items => {
         for (const item of items) {
-          item.commands = megapath.commands;
+          item.commands = trailingFog.commands;
         }
-      }, true);
+      }, false);
     } else {
-      await OBR.scene.local.addItems([megapath]);
+      await OBR.scene.local.addItems([trailingFog]);
     }
-  
-    megapathrect.delete();
   } else {
-    const fogItems = await OBR.scene.local.getItems(filter_item => { return filter_item.name === "Megafog" });
+    const fogItems = await OBR.scene.local.getItems(isTrailingFog);
     await OBR.scene.local.deleteItems(fogItems.map(fogItem => fogItem.id));
   }
 
+  trailingFogRect.delete();
+
   // Before we start adding and removing, get a list of fog items, excluding any that we detected as duplicates in the scene:
-  const oldFog = await OBR.scene.items.getItems( (item) => item.name === "Fog of War" && dedup_digest[item.metadata[`${ID}/digest`]] === undefined );
+  const oldFog = await OBR.scene.local.getItems( (item) => isVisionFog(item) && dedup_digest[item.metadata[`${ID}/digest`]] === undefined );
 
   const promisesToExecute = [
-    OBR.scene.items.addItems(itemsToAdd.map(item => {
-
-      const FOGPLAYERID = item.playerId;
-
-      const path = buildPath().commands(item.cmds).locked(true).visible(item.visible).fillColor('#000000').strokeColor("#000000").layer("FOG").name("Fog of War").metadata({[`${ID}/isVisionFog`]: true}).metadata({[`${ID}/${FOGPLAYERID}`]: true}).metadata({[`${ID}/digest`]: item.digest}).build();
+    OBR.scene.local.addItems(itemsToAdd.map(item => {
+      const path = buildPath().commands(item.cmds).locked(true).visible(item.visible).fillColor('#000000').strokeColor("#000000").layer("FOG").name("Fog of War").metadata({[`${ID}/isVisionFog`]: true, [`${ID}/digest`]: item.digest}).build();
       path.zIndex = item.zIndex;
 
       return path;
@@ -605,7 +636,7 @@ async function computeShadow(event) {
   if (!persistenceEnabled) {
     // these deletes control persistence.
     // in path merge mode, remove the previous item, because we have replaced it with our new one.
-    promisesToExecute.push(OBR.scene.items.deleteItems(oldFog.map((item) => item.id)));
+    promisesToExecute.push(OBR.scene.local.deleteItems(oldFog.map((item) => item.id)));
 
     // in the original, it just wipes out everything in scene.local
     //OBR.scene.local.deleteItems(localItems.filter(isVisionFog).map(fogItem => fogItem.id)),
@@ -636,13 +667,20 @@ export async function onSceneDataChange(forceUpdate) {
 
   if (!(await OBR.scene.isReady()))
     return;
-
+  
   const [awaitTimer, computeTimer] = [new Timer(), new Timer()];
   
   awaitTimer.start(); awaitTimer.pause();
   computeTimer.start();
 
-  const playersWithVision = sceneCache.items.filter(isPlayerWithVision);
+
+  const gmPlayers = sceneCache.players.filter(x => x.role == "GM");
+  const gmTokens = sceneCache.items.filter(item => item.layer == "CHARACTER" && gmPlayers.some(gm => item.createdUserId === gm.id) && item.metadata[`${ID}/hasVision`]);
+  sceneCache.items = await OBR.scene.items.getItems();
+  const playersWithVision = (sceneCache.role == "GM") ? sceneCache.items.filter(isTokenWithVision) : sceneCache.items.filter(isTokenWithVisionIOwn).concat(gmTokens);
+
+
+  //  const playersWithVision = sceneCache.items.filter(isPlayerWithVision);
   const visionShapes = sceneCache.items.filter(isActiveVisionLine);
   const backgroundImage = sceneCache.items.filter(isBackgroundImage)?.[0];
   const visionEnabled = sceneCache.metadata[`${ID}/visionEnabled`] === true;
@@ -657,7 +695,7 @@ export async function onSceneDataChange(forceUpdate) {
   const dpiRatio = sceneCache.gridDpi / backgroundImage.grid.dpi;
   const size = [backgroundImage.image.width * dpiRatio, backgroundImage.image.height * dpiRatio];
   const scale = [backgroundImage.scale.x, backgroundImage.scale.y];
-  const offset = [backgroundImage.position.x, backgroundImage.position.y];
+  const offset = [backgroundImage.position.x + (backgroundImage.grid.offset.x * dpiRatio), backgroundImage.position.y + (backgroundImage.grid.offset.y * dpiRatio)];
   document.getElementById("map_name").innerText = backgroundImage.name;
   document.getElementById("map_size").innerText = `Map size: ${Math.round(size[0])}x${Math.round(size[1])} px`;
 
@@ -693,6 +731,8 @@ export async function onSceneDataChange(forceUpdate) {
   previousFowColor = fowColor;
   previousPersistenceEnabled = persistenceEnabled;
   computeTimer.pause();
+
+  //console.log(playersWithVision);
 
   // Fire an `updateVisionEvent` to launch the `computeShadow` function.
   const updateVisionEvent = new CustomEvent("updateVision", {
