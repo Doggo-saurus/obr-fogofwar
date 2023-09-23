@@ -117,16 +117,8 @@ function updateUI(items)
     fowColor.value = sceneCache.metadata[`${ID}/fowColor`] ? sceneCache.metadata[`${ID}/fowColor`] : '#000000';
   }
 
-  if (autodetectCheckbox.checked) {
-    document.querySelector('#map_select').style.display = 'none';
-  } else {
-    document.querySelector('#map_select').style.display = '';
-  }
-
-  if (playersWithVision.length > 0)
-    message.style.display = "none";
-  else
-    message.style.display = "block";
+  document.querySelector('#map_select').style.display = autodetectCheckbox.checked ? "none" : "";
+  message.style.display = playersWithVision.length > 0 ? "none" : "block";
 
   const tokenTableEntries = document.getElementsByClassName("token-table-entry");
   const toRemove = [];
