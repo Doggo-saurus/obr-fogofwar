@@ -358,6 +358,13 @@ async function computeShadow(event) {
           continue;
       }
 
+      // exclude any lines outside of the fog area
+      // can pathkit do this better / faster?
+      let lsx = line.startPosition.x, lsy = line.startPosition.y, lex = line.endPosition.x, ley = line.endPosition.y;
+      if ((lsx < offset[0] || lsy < offset[1] || lsx > offset[0] + size[0] || lsy > offset[1] + size[1]) && (lex < offset[0] || lex < offset[1] || lex > offset[0] + size[0] || lex > offset[1] + size[1])) {
+        continue;
+      }
+
       // *1st step* - compute the points in the polygon representing the shadow
       // cast by `line` from the point of view of `player`.
 
