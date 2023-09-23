@@ -300,6 +300,10 @@ async function computeShadow(event) {
     [width, height] = size;
   }
 
+  //let debug_map = buildShape().shapeType("RECTANGLE").position({x: offset[0], y: offset[1]}).width(size[0]).height(size[1]).visible(true).fillColor('#FF0000').strokeColor("#00FF00").layer("DRAWING").name("Fog of War").metadata({[`${ID}/isVisionFog`]: true}).build();
+  //OBR.scene.local.addItems([debug_map]);
+
+
   let cacheHits = 0, cacheMisses = 0;
   if (invalidateCache)  // Something significant changed => invalidate cache
     playerShadowCache.invalidate((_, value) => value.shadowPath.delete());
@@ -333,7 +337,6 @@ async function computeShadow(event) {
   // `polygons` is a an array of arrays. Each element in the main array is
   // another array containing the individual shadows cast by a vision line
   // from the point of view of one player.
-
   const polygons = [];
   const gmIds = sceneCache.players.filter(x => x.role == "GM");
   for (const player of playersWithVision) {
@@ -354,7 +357,7 @@ async function computeShadow(event) {
         if ((line.oneSided == "right" && signedDistance > 0) || (line.oneSided == "left" && signedDistance < 0))
           continue;
       }
-      
+
       // *1st step* - compute the points in the polygon representing the shadow
       // cast by `line` from the point of view of `player`.
 
@@ -453,6 +456,7 @@ async function computeShadow(event) {
     return;
   }
 
+  //console.log(polygons);
   // *2nd step* - compute shadow polygons for each player, merging all polygons
   // created previously (this can probably be merged into the last step)
   const itemsPerPlayer = {};
@@ -496,10 +500,14 @@ async function computeShadow(event) {
       pathBuilder.add(newPath, PathKit.PathOp.DIFFERENCE);
       newPath.delete();
     }
+
+    // TODO: this will **RANDOMLY** fail when there's are obstruction lines that sit outside of the fog limit area.
+    // the resulting path will simply be empty. if map autodetection is on, this will (generally) never happen because all the obstruction lines are within the detection area
+
     const path = pathBuilder.resolve();
 
     if (!path || path.toCmds().length == 0) {
-      console.error("Couldn't compute fog");
+      console.error("Couldn't compute fog", pathBuilder, path);
       busy = false;
       return;
     }
@@ -527,8 +535,8 @@ async function computeShadow(event) {
     const myToken = (sceneCache.userId === playersWithVision[i].createdUserId);
     const gmToken = gmIds.some(x => x.id == playersWithVision[i].createdUserId);
 
-if (visionRangeMeta) {
-if ((!myToken && sceneCache.role !== "GM") && !gmToken) continue;
+    if (visionRangeMeta) {
+      if ((!myToken && sceneCache.role !== "GM") && !gmToken) continue;
 
       const visionRange = sceneCache.gridDpi * (visionRangeMeta / sceneCache.gridScale + .5);
       const ellipse = PathKit.NewPath().ellipse(player.position.x, player.position.y, visionRange, visionRange, 0, 0, 2*Math.PI);
@@ -695,7 +703,7 @@ export async function onSceneDataChange(forceUpdate) {
   const dpiRatio = sceneCache.gridDpi / backgroundImage.grid.dpi;
   const size = [backgroundImage.image.width * dpiRatio, backgroundImage.image.height * dpiRatio];
   const scale = [backgroundImage.scale.x, backgroundImage.scale.y];
-  const offset = [backgroundImage.position.x + (backgroundImage.grid.offset.x * dpiRatio), backgroundImage.position.y + (backgroundImage.grid.offset.y * dpiRatio)];
+  const offset = [backgroundImage.position.x - (backgroundImage.grid.offset.x * dpiRatio), backgroundImage.position.y - (backgroundImage.grid.offset.y * dpiRatio)];
   document.getElementById("map_name").innerText = backgroundImage.name;
   document.getElementById("map_size").innerText = `Map size: ${Math.round(size[0])}x${Math.round(size[1])} px`;
 
